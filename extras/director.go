@@ -9,35 +9,44 @@ import (
   "github.com/mwitkow/grpc-proxy/proxy"
   "google.golang.org/grpc/credentials"
   "google.golang.org/grpc/grpclog"
+  "google.golang.org/grpc/metadata"
 )
 
-func GetDirector(config Config) func(context.Context, string) (*grpc.ClientConn, error) {
+func GetDirector(config Config) func(context.Context, string) (context.Context, *grpc.ClientConn, error) {
 
   credentialsCache := make(map[string] credentials.TransportCredentials)
 
-  return func(ctx context.Context, fullMethodName string) (*grpc.ClientConn, error) {
+  return func(ctx context.Context, fullMethodName string) (context.Context, *grpc.ClientConn, error) {
     for _, backend := range config.Backends {
       if strings.HasPrefix(fullMethodName, backend.Filter) {
         if (config.Verbose) {
           fmt.Printf("Found: %s > %s \n", fullMethodName, backend.Backend)
         }
         if backend.CertFile == "" {
-          return grpc.DialContext(ctx, backend.Backend, grpc.WithCodec(proxy.Codec()),
+          md, _ := metadata.FromIncomingContext(ctx)
+          outCtx, _ := context.WithCancel(ctx)
+          outCtx = metadata.NewOutgoingContext(outCtx, md.Copy())
+          con, err := grpc.DialContext(outCtx, backend.Backend, grpc.WithCodec(proxy.Codec()),
             grpc.WithInsecure())
+          return outCtx, con, err
         }
         creds := GetCredentials(credentialsCache, backend)
         if creds != nil {
-          return grpc.DialContext(ctx, backend.Backend, grpc.WithCodec(proxy.Codec()),
+          md, _ := metadata.FromIncomingContext(ctx)
+          outCtx, _ := context.WithCancel(ctx)
+          outCtx = metadata.NewOutgoingContext(outCtx, md.Copy())
+          con, err := grpc.DialContext(outCtx, backend.Backend, grpc.WithCodec(proxy.Codec()),
             grpc.WithTransportCredentials(creds))
+          return outCtx, con, err
         }
         grpclog.Fatalf("Failed to create TLS credentials")
-        return nil, grpc.Errorf(codes.FailedPrecondition, "Backend TLS is not configured properly in grpc-proxy")
+        return nil, nil, grpc.Errorf(codes.FailedPrecondition, "Backend TLS is not configured properly in grpc-proxy")
       }
     }
     if (config.Verbose) {
       fmt.Println("Not found: ", fullMethodName)
     }
-    return nil, grpc.Errorf(codes.Unimplemented, "Unknown method")
+    return nil, nil, grpc.Errorf(codes.Unimplemented, "Unknown method")
   }
 }
 
