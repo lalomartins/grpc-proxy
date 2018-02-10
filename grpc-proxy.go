@@ -5,11 +5,13 @@ import (
   "google.golang.org/grpc"
   "log"
   "net"
+  "net/http"
   "fmt"
   "os"
   "github.com/devsu/grpc-proxy/extras"
   "google.golang.org/grpc/credentials"
   "google.golang.org/grpc/grpclog"
+  "golang.org/x/net/trace"
 )
 
 func main() {
@@ -21,6 +23,18 @@ func main() {
   }
 
   config := extras.GetConfiguration(configurationFile)
+
+  if (config.Trace) {
+    grpc.EnableTracing = true
+    // Start the default http server and explicitly bind it to listen on localhost for security purposes
+    // Accessing http://localhost:6060/debug/events or http://localhost:6060/debug/requests will show the
+    // currently gathered traces.
+    trace.AuthRequest = func(req *http.Request) (any, sensitive bool) {
+      return true, true
+    }
+
+    go http.ListenAndServe("0.0.0.0:6060", nil)
+  }
 
   listen := ":50051"
   if config.Listen != "" {

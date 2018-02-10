@@ -14,6 +14,7 @@ type Config struct {
   CertFile string     `json:"certFile"`
   KeyFile string      `json:"keyFile"`
   Backends []Backend  `json:"backends"`
+  Trace bool          `json:"trace"`
 }
 
 type Backend struct {
